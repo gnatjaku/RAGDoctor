@@ -1,0 +1,85 @@
+services:
+
+  # ── MongoDB ─────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:6.0
+    container_name: mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Init indexes (one-shot) ─────────────────────────────────────────────
+  init-indexes:
+    image: python:3.11-slim
+    container_name: init-indexes
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017
+      MONGO_DB_NAME: ${MONGODB_DB:-rag_db}
+      MONGO_COLLECTION_NAME: ${MONGODB_COLLECTION:-documents}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+    command: >
+      sh -c "pip install pymongo python-dotenv --quiet &&
+             python -m db.indexes"
+    restart: "no"
+
+  # ── RAG API ─────────────────────────────────────────────────────────────
+  rag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ragdoctor-api:latest
+    container_name: rag-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?retryWrites=true&w=majority
+      MONGODB_DB: ${MONGODB_DB:-rag_db}
+      MONGODB_COLLECTION: ${MONGODB_COLLECTION:-documents}
+      MONGODB_VECTOR_INDEX: ${MONGODB_VECTOR_INDEX:-vector_index}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
+      MAX_CONTEXT_CHUNKS: ${MAX_CONTEXT_CHUNKS:-5}
+      CHUNK_SIZE: ${CHUNK_SIZE:-800}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-120}
+
+  # ── Mongo Express (webowe GUI) ──────────────────────────────────────────
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/
+      ME_CONFIG_BASICAUTH: "false"
+
+volumes:
+  mongo-data: {}

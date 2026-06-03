@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAGDoctor – Twój Asystent Medyczny</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #e8f4fd 0%, #d0eaf8 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            width: 100%;
+            background: linear-gradient(90deg, #1a6faf, #2196F3);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        header img {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 2px solid white;
+            object-fit: cover;
+        }
+
+        header h1 { font-size: 1.6rem; font-weight: 700; }
+        header p  { font-size: 0.85rem; opacity: 0.85; }
+
+        #status-bar {
+            font-size: 0.75rem;
+            margin-left: auto;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.2);
+        }
+
+        main {
+            width: 100%;
+            max-width: 860px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 24px 16px;
+            gap: 16px;
+        }
+
+        #chat-window {
+            flex: 1;
+            min-height: 400px;
+            max-height: 60vh;
+            overflow-y: auto;
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .msg {
+            display: flex;
+            gap: 10px;
+            max-width: 85%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+        .msg.user  { align-self: flex-end; flex-direction: row-reverse; }
+        .msg.bot   { align-self: flex-start; }
+
+        .msg .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .msg.user .avatar  { background: #2196F3; color: white; }
+        .msg.bot  .avatar  { background: #e8f4fd; }
+        .msg.bot  .avatar img { width:36px; height:36px; border-radius:50%; object-fit:cover; }
+
+        .bubble {
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .msg.user .bubble { background: #2196F3; color: white; border-bottom-right-radius: 4px; }
+        .msg.bot  .bubble { background: #f0f7ff; color: #1a1a2e; border-bottom-left-radius: 4px; border: 1px solid #d0e8f8; }
+
+        .citations {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #555;
+        }
+
+        .citations summary {
+            cursor: pointer;
+            color: #1a6faf;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .citation-item {
+            background: #fff;
+            border: 1px solid #d0e8f8;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+        }
+
+        .citation-item .score { color: #888; font-size: 0.75rem; }
+        .citation-item a { color: #1a6faf; word-break: break-all; }
+        .citation-item .chunk-text {
+            margin-top: 4px;
+            font-size: 0.78rem;
+            color: #444;
+            max-height: 80px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+        }
+
+        #typing {
+            display: none;
+            align-self: flex-start;
+            padding: 10px 16px;
+            background: #f0f7ff;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            color: #555;
+            border: 1px solid #d0e8f8;
+        }
+
+        #typing span { animation: blink 1s infinite; }
+        #typing span:nth-child(2) { animation-delay: 0.2s; }
+        #typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%,80%,100% { opacity:0; } 40% { opacity:1; } }
+
+        #input-area {
+            display: flex;
+            gap: 10px;
+            background: white;
+            border-radius: 14px;
+            padding: 12px 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+
+        #question {
+            flex: 1;
+            border: none;
+            outline: none;
+            font-size: 1rem;
+            resize: none;
+            font-family: inherit;
+            line-height: 1.5;
+            max-height: 120px;
+        }
+
+        #send-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 22px;
+            font-size: 1rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+            align-self: flex-end;
+        }
+
+        #send-btn:hover  { background: #1a6faf; }
+        #send-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+        .welcome {
+            text-align: center;
+            color: #888;
+            padding: 40px 0;
+            font-size: 0.95rem;
+        }
+
+        .welcome img { width: 80px; opacity: 0.4; border-radius: 50%; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <img src="doctor.PNG" alt="Doctor" onerror="this.style.display='none'" />
+    <div>
+        <h1>RAGDoctor</h1>
+        <p>Twój Asystent Medyczny – odpowiedzi na podstawie źródeł</p>
+    </div>
+    <div id="status-bar">⏳ sprawdzanie...</div>
+</header>
+
+<main>
+    <div id="chat-window">
+        <div class="welcome" id="welcome-msg">
+            <img src="doctor.PNG" alt="Doctor" onerror="this.style.display='none'" />
+            <p>Witaj! Zadaj mi pytanie medyczne, a odpowiem na podstawie dostępnych artykułów.</p>
+        </div>
+    </div>
+    <div id="typing">🤔 Doktor analizuje<span>.</span><span>.</span><span>.</span></div>
+    <div id="input-area">
+        <textarea id="question" rows="1" placeholder="Zadaj pytanie medyczne..."></textarea>
+        <button id="send-btn">Wyślij ➤</button>
+    </div>
+</main>
+
+<script>
+    const chatWindow = document.getElementById('chat-window');
+    const questionEl = document.getElementById('question');
+    const sendBtn    = document.getElementById('send-btn');
+    const typingEl   = document.getElementById('typing');
+    const statusBar  = document.getElementById('status-bar');
+    const welcomeMsg = document.getElementById('welcome-msg');
+
+    // Health check
+    async function checkHealth() {
+        try {
+            const r = await fetch('/api/health');
+            const d = await r.json();
+            statusBar.textContent = d.ragapi?.status === 'ok' ? '🟢 API online' : '🔴 API offline';
+        } catch {
+            statusBar.textContent = '🔴 API offline';
+        }
+    }
+    checkHealth();
+    setInterval(checkHealth, 30000);
+
+    // Auto-resize textarea
+    questionEl.addEventListener('input', () => {
+        questionEl.style.height = 'auto';
+        questionEl.style.height = Math.min(questionEl.scrollHeight, 120) + 'px';
+    });
+
+    // Send on Enter (Shift+Enter = newline)
+    questionEl.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+    });
+    sendBtn.addEventListener('click', sendQuestion);
+
+    function addMessage(role, html) {
+        if (welcomeMsg) welcomeMsg.remove();
+        const msg = document.createElement('div');
+        msg.className = `msg ${role}`;
+
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar';
+
+        if (role === 'bot') {
+            const img = document.createElement('img');
+            img.src = 'doctor.PNG';
+            img.alt = 'Doc';
+            img.onerror = () => { avatar.textContent = '🩺'; };
+            avatar.appendChild(img);
+        } else {
+            avatar.textContent = '👤';
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        bubble.innerHTML = html;
+
+        msg.appendChild(avatar);
+        msg.appendChild(bubble);
+        chatWindow.appendChild(msg);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+        return bubble;
+    }
+
+    function renderCitations(citations) {
+        if (!citations || citations.length === 0) return '';
+        const items = citations.map(c => {
+            const url = c.metadata?.url
+                ? `<a href="${c.metadata.url}" target="_blank">🔗 ${c.metadata.url}</a>`
+                : '';
+            const score = `<span class="score">Trafność: ${(c.score * 100).toFixed(1)}%</span>`;
+            const text = `<div class="chunk-text">${escHtml(c.text)}</div>`;
+            const src  = `<strong>${escHtml(c.source_name)}</strong>`;
+            return `<div class="citation-item">${src} ${score}${url}${text}</div>`;
+        }).join('');
+        return `<details class="citations"><summary>📚 Źródła (${citations.length})</summary>${items}</details>`;
+    }
+
+    function escHtml(str) {
+        return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function sendQuestion() {
+        const question = questionEl.value.trim();
+        if (!question) return;
+
+        questionEl.value = '';
+        questionEl.style.height = 'auto';
+        sendBtn.disabled = true;
+        typingEl.style.display = 'block';
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+
+        addMessage('user', escHtml(question));
+
+        try {
+            const res = await fetch('/api/ask', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question, top_k: 5 }),
+            });
+            const data = await res.json();
+
+            typingEl.style.display = 'none';
+
+            if (!res.ok) {
+                addMessage('bot', `<span style="color:red">❌ Błąd: ${escHtml(data.error || 'Nieznany błąd')}</span>`);
+            } else {
+                const answerHtml = escHtml(data.answer).replace(/\n/g, '<br>');
+                addMessage('bot', answerHtml + renderCitations(data.citations));
+            }
+        } catch (err) {
+            typingEl.style.display = 'none';
+            addMessage('bot', `<span style="color:red">❌ Błąd połączenia: ${escHtml(err.message)}</span>`);
+        }
+
+        sendBtn.disabled = false;
+        questionEl.focus();
+    }
+</script>
+
+</body>
+</html>
+

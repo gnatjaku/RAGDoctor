@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAGDoctor — Asystent Medyczny</title>
+    <style>
+        :root {
+            --bg: #0f1923;
+            --panel: #162130;
+            --panel2: #1c2d3f;
+            --accent: #00bcd4;
+            --accent2: #00e5ff;
+            --green: #4caf50;
+            --red: #ef5350;
+            --text: #e0f0f8;
+            --muted: #7a9ab0;
+            --chunk-bg: #0d1e2b;
+            --chunk-border: #00bcd455;
+            --radius: 14px;
+            --shadow: 0 4px 32px #00bcd422;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ─── HEADER ─── */
+        header {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 18px 32px;
+            background: var(--panel);
+            border-bottom: 1px solid var(--chunk-border);
+            box-shadow: var(--shadow);
+        }
+
+        header img#doctor-logo {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            object-fit: cover;
+            background: var(--panel2);
+        }
+
+        .header-title h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--accent2);
+            letter-spacing: 1px;
+        }
+        .header-title p {
+            font-size: 0.82rem;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        #status-dot {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+        .dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: var(--muted);
+            animation: pulse 2s infinite;
+        }
+        .dot.online { background: var(--green); }
+        .dot.offline { background: var(--red); animation: none; }
+        @keyframes pulse {
+            0%,100% { opacity: 1; } 50% { opacity: 0.4; }
+        }
+
+        /* ─── MAIN LAYOUT ─── */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 960px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 28px 20px;
+            gap: 22px;
+        }
+
+        /* ─── CHAT HISTORY ─── */
+        #chat-history {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            min-height: 0;
+            max-height: calc(100vh - 320px);
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+        #chat-history::-webkit-scrollbar { width: 6px; }
+        #chat-history::-webkit-scrollbar-thumb { background: var(--chunk-border); border-radius: 3px; }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+        }
+        .empty-state img {
+            width: 120px;
+            border-radius: 50%;
+            border: 2px solid var(--chunk-border);
+            margin-bottom: 16px;
+            opacity: 0.7;
+        }
+        .empty-state h2 { font-size: 1.2rem; color: var(--accent); margin-bottom: 8px; }
+        .empty-state p { font-size: 0.9rem; }
+
+        /* ─── MESSAGE BUBBLES ─── */
+        .msg { display: flex; gap: 12px; align-items: flex-start; }
+        .msg.user { flex-direction: row-reverse; }
+
+        .msg-avatar {
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        .msg.user .msg-avatar { background: var(--accent); color: #000; }
+        .msg.assistant .msg-avatar {
+            background: var(--panel2);
+            border: 1px solid var(--accent);
+            overflow: hidden;
+            padding: 0;
+        }
+        .msg.assistant .msg-avatar img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+
+        .msg-body { max-width: 78%; display: flex; flex-direction: column; gap: 10px; }
+        .msg.user .msg-body { align-items: flex-end; }
+
+        .assistant-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 4px;
+        }
+
+        .pdf-btn {
+            background: transparent;
+            border: 1px solid var(--chunk-border);
+            color: var(--accent);
+            border-radius: 8px;
+            width: 34px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .pdf-btn svg {
+            width: 16px;
+            height: 16px;
+            pointer-events: none;
+        }
+
+        .pdf-btn .pdf-spinner {
+            animation: pdf-spin 0.9s linear infinite;
+            transform-origin: center;
+        }
+
+        @keyframes pdf-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .pdf-btn .pdf-spinner { animation: none; }
+        }
+
+        .pdf-btn:hover { background: var(--chunk-bg); color: var(--accent2); }
+        .pdf-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+        .bubble {
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+        .msg.user .bubble {
+            background: var(--accent);
+            color: #001520;
+            border-bottom-right-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .msg.assistant .bubble {
+            background: var(--panel2);
+            border: 1px solid var(--chunk-border);
+            border-bottom-left-radius: 4px;
+        }
+        .bubble > :first-child { margin-top: 0; }
+        .bubble > :last-child { margin-bottom: 0; }
+        .bubble p { margin: 0 0 0.85rem; }
+        .bubble ul, .bubble ol {
+            margin: 0 0 0.85rem 1.25rem;
+            padding: 0;
+        }
+        .bubble li { margin: 0.25rem 0; }
+        .bubble strong { color: #ffffff; font-weight: 700; }
+        .bubble code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            background: #0b1722;
+            border: 1px solid #ffffff14;
+            border-radius: 6px;
+            padding: 0.1rem 0.35rem;
+            font-size: 0.9em;
+        }
+
+        /* ─── CHUNKS SECTION ─── */
+        .chunks-wrapper { width: 100%; }
+
+        .chunks-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: none;
+            border: 1px solid var(--chunk-border);
+            color: var(--accent);
+            font-size: 0.82rem;
+            padding: 5px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 8px;
+        }
+        .chunks-toggle:hover { background: var(--chunk-bg); }
+        .chunks-toggle .arrow { transition: transform 0.2s; }
+        .chunks-toggle.open .arrow { transform: rotate(90deg); }
+
+        .chunks-list { display: none; flex-direction: column; gap: 8px; }
+        .chunks-list.visible { display: flex; }
+
+        .chunk-card {
+            background: var(--chunk-bg);
+            border: 1px solid var(--chunk-border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 0.83rem;
+        }
+        .chunk-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .chunk-source {
+            color: var(--accent);
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+        .chunk-source a {
+            color: var(--accent2);
+            text-decoration: none;
+        }
+        .chunk-source a:hover { text-decoration: underline; }
+        .score-badge {
+            background: #00bcd422;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            border-radius: 12px;
+            padding: 2px 9px;
+            font-size: 0.74rem;
+        }
+        .chunk-text {
+            color: #c5dde8;
+            line-height: 1.5;
+            max-height: 120px;
+            overflow: hidden;
+            position: relative;
+        }
+        .chunk-text.expanded { max-height: none; }
+        .expand-btn {
+            color: var(--muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+            margin-top: 4px;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        .expand-btn:hover { color: var(--accent); }
+
+        /* ─── TYPING INDICATOR ─── */
+        .typing-indicator {
+            display: flex; gap: 5px; padding: 10px 14px;
+            background: var(--panel2);
+            border: 1px solid var(--chunk-border);
+            border-radius: var(--radius);
+            width: fit-content;
+        }
+        .typing-indicator span {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: typing 1.2s infinite;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing {
+            0%,60%,100% { transform: translateY(0); opacity: 0.5; }
+            30% { transform: translateY(-6px); opacity: 1; }
+        }
+
+        /* ─── ERROR ─── */
+        .error-bubble {
+            background: #2d0e0e;
+            border: 1px solid var(--red);
+            color: #ff8a80;
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            font-size: 0.88rem;
+        }
+
+        /* ─── INPUT AREA ─── */
+        #input-area {
+            background: var(--panel);
+            border: 1px solid var(--chunk-border);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+            box-shadow: var(--shadow);
+        }
+
+        #question-input {
+            flex: 1;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text);
+            font-size: 0.97rem;
+            resize: none;
+            max-height: 120px;
+            min-height: 40px;
+            font-family: inherit;
+            line-height: 1.5;
+        }
+        #question-input::placeholder { color: var(--muted); }
+
+        #send-btn {
+            background: var(--accent);
+            border: none;
+            border-radius: 10px;
+            color: #001520;
+            font-size: 1.2rem;
+            width: 44px; height: 44px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: background 0.2s, transform 0.1s;
+            flex-shrink: 0;
+        }
+        #send-btn:hover { background: var(--accent2); transform: scale(1.05); }
+        #send-btn:disabled { background: var(--muted); cursor: not-allowed; transform: none; }
+
+        .input-hint {
+            font-size: 0.74rem;
+            color: var(--muted);
+            text-align: right;
+            padding: 4px 6px 0;
+        }
+
+        /* ─── FOOTER ─── */
+        footer {
+            text-align: center;
+            padding: 12px;
+            font-size: 0.75rem;
+            color: var(--muted);
+            border-top: 1px solid var(--chunk-border);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <img id="doctor-logo" src="doctor.PNG" alt="Doctor" onerror="this.style.display='none';document.getElementById('doctor-emoji').style.display='flex'" />
+    <div id="doctor-emoji" style="display:none;width:64px;height:64px;border-radius:50%;border:2px solid var(--accent);background:var(--panel2);align-items:center;justify-content:center;font-size:2rem;">🩺</div>
+    <div class="header-title">
+        <h1>RAGDoctor</h1>
+        <p>Asystent medyczny oparty na dokumentach · Retrieval-Augmented Generation</p>
+    </div>
+    <div id="status-dot">
+        <div class="dot" id="health-dot"></div>
+        <span id="health-text">Sprawdzanie...</span>
+    </div>
+</header>
+
+<main>
+    <div id="chat-history">
+        <div class="empty-state" id="empty-state">
+            <img src="doctor.PNG" alt="Doctor" onerror="this.outerHTML='<div style=\'font-size:5rem;margin-bottom:16px\'>🩺</div>'" />
+            <h2>Witaj w RAGDoctor</h2>
+            <p>Zadaj pytanie medyczne, a system wyszuka odpowiednie fragmenty z bazy wiedzy<br/>i wygeneruje odpowiedź opartą na źródłach.</p>
+        </div>
+    </div>
+
+    <div>
+        <div id="input-area">
+            <textarea id="question-input" placeholder="Zadaj pytanie medyczne…" rows="1"></textarea>
+            <button id="send-btn" title="Wyślij (Enter)">➤</button>
+        </div>
+        <div class="input-hint">Enter — wyślij &nbsp;|&nbsp; Shift+Enter — nowa linia</div>
+    </div>
+</main>
+
+<footer>RAGDoctor WebGUI &nbsp;·&nbsp; Odpowiedzi generowane przez AI nie zastępują porady lekarskiej.</footer>
+
+<script>
+const chatHistory = document.getElementById('chat-history');
+const input = document.getElementById('question-input');
+const sendBtn = document.getElementById('send-btn');
+const emptyState = document.getElementById('empty-state');
+
+// ─── Health check ───
+async function checkHealth() {
+    const dot = document.getElementById('health-dot');
+    const txt = document.getElementById('health-text');
+    try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        if (data.ragapi?.status === 'ok' || data.ragapi === 'ok') {
+            dot.className = 'dot online';
+            txt.textContent = 'API online';
+        } else {
+            dot.className = 'dot offline';
+            txt.textContent = 'API niedostępne';
+        }
+    } catch {
+        dot.className = 'dot offline';
+        txt.textContent = 'API offline';
+    }
+}
+checkHealth();
+setInterval(checkHealth, 15000);
+
+// ─── Auto-resize textarea ───
+input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+});
+
+// ─── Keyboard ───
+input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendQuestion();
+    }
+});
+sendBtn.addEventListener('click', sendQuestion);
+
+// ─── Helpers ───
+function scrollToBottom() {
+    chatHistory.scrollTo({ top: chatHistory.scrollHeight, behavior: 'smooth' });
+}
+
+function extractUrl(metadata) {
+    if (!metadata) return null;
+    return metadata.url || metadata.source_url || metadata.link || null;
+}
+
+function renderChunks(citations) {
+    if (!citations || citations.length === 0) return null;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chunks-wrapper';
+
+    const toggle = document.createElement('button');
+    toggle.className = 'chunks-toggle';
+    toggle.innerHTML = `<span class="arrow">▶</span> Fragmenty źródłowe (${citations.length})`;
+    wrapper.appendChild(toggle);
+
+    const list = document.createElement('div');
+    list.className = 'chunks-list';
+    wrapper.appendChild(list);
+
+    citations.forEach((chunk, i) => {
+        const card = document.createElement('div');
+        card.className = 'chunk-card';
+
+        const url = extractUrl(chunk.metadata);
+        const sourceName = chunk.source_name || chunk.chunk_id || `Fragment ${i + 1}`;
+
+        const sourceHtml = url
+            ? `<a href="${url}" target="_blank" rel="noopener">🔗 ${sourceName}</a>`
+            : `📄 ${sourceName}`;
+
+        card.innerHTML = `
+            <div class="chunk-meta">
+                <span class="chunk-source">${sourceHtml}</span>
+                <span class="score-badge">score: ${chunk.score.toFixed(3)}</span>
+            </div>
+            <div class="chunk-text" id="ct-${i}-${Date.now()}">${escapeHtml(chunk.text)}</div>
+            <button class="expand-btn">Rozwiń ▼</button>
+        `;
+
+        const textEl = card.querySelector('.chunk-text');
+        const expandBtn = card.querySelector('.expand-btn');
+        expandBtn.addEventListener('click', () => {
+            textEl.classList.toggle('expanded');
+            expandBtn.textContent = textEl.classList.contains('expanded') ? 'Zwiń ▲' : 'Rozwiń ▼';
+        });
+
+        list.appendChild(card);
+    });
+
+    toggle.addEventListener('click', () => {
+        toggle.classList.toggle('open');
+        list.classList.toggle('visible');
+    });
+
+    return wrapper;
+}
+
+function escapeHtml(str) {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function renderInlineFormatting(text) {
+    return escapeHtml(text)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function renderAnswerHtml(text) {
+    const normalized = (text || '').replace(/\r\n/g, '\n').trim();
+    if (!normalized) return '<p>Brak odpowiedzi.</p>';
+
+    const lines = normalized.split('\n');
+    const blocks = [];
+    let paragraph = [];
+    let listItems = [];
+
+    const flushParagraph = () => {
+        if (!paragraph.length) return;
+        blocks.push(`<p>${renderInlineFormatting(paragraph.join(' '))}</p>`);
+        paragraph = [];
+    };
+
+    const flushList = () => {
+        if (!listItems.length) return;
+        blocks.push(`<ul>${listItems.map(item => `<li>${renderInlineFormatting(item)}</li>`).join('')}</ul>`);
+        listItems = [];
+    };
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+
+        if (!line) {
+            flushParagraph();
+            flushList();
+            continue;
+        }
+
+        const bulletMatch = line.match(/^[-*•]\s+(.+)$/);
+        if (bulletMatch) {
+            flushParagraph();
+            listItems.push(bulletMatch[1]);
+            continue;
+        }
+
+        flushList();
+        paragraph.push(line);
+    }
+
+    flushParagraph();
+    flushList();
+
+    return blocks.join('');
+}
+
+function buildAnswerFilename(question) {
+    const datePart = new Date().toISOString().slice(0, 10);
+    const questionPart = (question || 'odpowiedz')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 5)
+        .join('-');
+    return `ragdoctor-${questionPart || 'odpowiedz'}-${datePart}`;
+}
+
+const PDF_ICON_SVG = `
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <path d="M14 2H7C5.89543 2 5 2.89543 5 4V20C5 21.1046 5.89543 22 7 22H17C18.1046 22 19 21.1046 19 20V7L14 2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M14 2V7H19" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M8 13.5H12.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8 17H16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+`;
+
+const PDF_SPINNER_SVG = `
+    <svg class="pdf-spinner" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity="0.3" stroke-width="2.5"/>
+        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+`;
+
+async function downloadAnswerPdf(answer, citations, question, buttonEl) {
+    const originalTitle = buttonEl.title;
+    const originalHtml = buttonEl.innerHTML;
+    buttonEl.disabled = true;
+    buttonEl.setAttribute('aria-busy', 'true');
+    buttonEl.title = 'Generowanie PDF...';
+    buttonEl.innerHTML = PDF_SPINNER_SVG;
+
+    try {
+        const response = await fetch('/api/answers/pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                answer,
+                question,
+                citations: citations || [],
+                fileName: buildAnswerFilename(question),
+            }),
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || `Błąd serwera: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${buildAnswerFilename(question)}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (err) {
+        addError(`Nie udało się pobrać PDF: ${err.message}`);
+    } finally {
+        buttonEl.disabled = false;
+        buttonEl.setAttribute('aria-busy', 'false');
+        buttonEl.title = originalTitle;
+        buttonEl.innerHTML = originalHtml;
+    }
+}
+
+function addMessage(role, content, citations, questionForAssistant = '') {
+    if (emptyState) emptyState.remove();
+
+    const msg = document.createElement('div');
+    msg.className = `msg ${role}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'msg-avatar';
+    if (role === 'user') {
+        avatar.textContent = '👤';
+    } else {
+        avatar.innerHTML = `<img src="doctor.PNG" alt="Dr" onerror="this.parentElement.textContent='🩺'">`;
+    }
+
+    const body = document.createElement('div');
+    body.className = 'msg-body';
+
+    if (role === 'assistant') {
+        const actions = document.createElement('div');
+        actions.className = 'assistant-actions';
+
+        const pdfBtn = document.createElement('button');
+        pdfBtn.className = 'pdf-btn';
+        pdfBtn.type = 'button';
+        pdfBtn.title = 'Pobierz odpowiedź jako PDF';
+        pdfBtn.setAttribute('aria-label', 'Pobierz odpowiedź jako PDF');
+        pdfBtn.setAttribute('aria-busy', 'false');
+        pdfBtn.innerHTML = PDF_ICON_SVG;
+        pdfBtn.addEventListener('click', () => {
+            downloadAnswerPdf(content, citations, questionForAssistant, pdfBtn);
+        });
+
+        actions.appendChild(pdfBtn);
+        body.appendChild(actions);
+    }
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    if (role === 'assistant') {
+        bubble.innerHTML = renderAnswerHtml(content);
+    } else {
+        bubble.textContent = content;
+    }
+    body.appendChild(bubble);
+
+    if (citations && citations.length > 0) {
+        const chunksEl = renderChunks(citations);
+        if (chunksEl) body.appendChild(chunksEl);
+    }
+
+    msg.appendChild(avatar);
+    msg.appendChild(body);
+    chatHistory.appendChild(msg);
+    scrollToBottom();
+    return msg;
+}
+
+function addTyping() {
+    const msg = document.createElement('div');
+    msg.className = 'msg assistant';
+    msg.id = 'typing-msg';
+    msg.innerHTML = `
+        <div class="msg-avatar"><img src="doctor.PNG" alt="Dr" onerror="this.parentElement.textContent='🩺'"></div>
+        <div class="msg-body">
+            <div class="typing-indicator"><span></span><span></span><span></span></div>
+        </div>`;
+    chatHistory.appendChild(msg);
+    scrollToBottom();
+}
+
+function addError(text) {
+    const msg = document.createElement('div');
+    msg.className = 'msg assistant';
+    msg.innerHTML = `
+        <div class="msg-avatar">⚠️</div>
+        <div class="msg-body"><div class="error-bubble">${escapeHtml(text)}</div></div>`;
+    chatHistory.appendChild(msg);
+    scrollToBottom();
+}
+
+// ─── Main ask logic ───
+async function sendQuestion() {
+    const question = input.value.trim();
+    if (!question || sendBtn.disabled) return;
+
+    // UI lock
+    sendBtn.disabled = true;
+    input.value = '';
+    input.style.height = 'auto';
+
+    addMessage('user', question);
+    addTyping();
+
+    try {
+        const res = await fetch('/api/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question }),
+        });
+
+        document.getElementById('typing-msg')?.remove();
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            addError(data.error || `Błąd serwera: ${res.status}`);
+        } else {
+            addMessage('assistant', data.answer, data.citations, question);
+        }
+    } catch (err) {
+        document.getElementById('typing-msg')?.remove();
+        addError(`Błąd połączenia: ${err.message}`);
+    } finally {
+        sendBtn.disabled = false;
+        input.focus();
+    }
+}
+</script>
+</body>
+</html>

@@ -6,11 +6,22 @@ from app.services.embeddings import embed_texts
 from app.config import settings
 
 
-def ingest_document(source_id: str, source_name: str, text: str, metadata: dict | None = None) -> dict:
+def ingest_document(
+    source_id: str,
+    source_name: str,
+    text: str,
+    metadata: dict | None = None,
+    *,
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
+) -> dict:
+    effective_chunk_size = chunk_size if chunk_size is not None else settings.chunk_size
+    effective_chunk_overlap = chunk_overlap if chunk_overlap is not None else settings.chunk_overlap
+
     chunks = chunk_text(
         text=text,
-        chunk_size=settings.chunk_size,
-        chunk_overlap=settings.chunk_overlap,
+        chunk_size=effective_chunk_size,
+        chunk_overlap=effective_chunk_overlap,
     )
     if not chunks:
         return {"inserted_chunks": 0}
@@ -42,6 +53,8 @@ def ingest_document(source_id: str, source_name: str, text: str, metadata: dict 
             "inserted_chunks": len(chunks),
             "upserted_count": result.upserted_count,
             "modified_count": result.modified_count,
+            "chunk_size": effective_chunk_size,
+            "chunk_overlap": effective_chunk_overlap,
         }
 
     return {"inserted_chunks": 0}

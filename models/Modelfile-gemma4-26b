@@ -1,0 +1,7 @@
+FROM /home/jakub/.cache/huggingface/hub/models--unsloth--gemma-4-26B-A4B-it-GGUF/snapshots/b68961b3c96e42475123a39fe3f8aa149163cf8b/gemma-4-26B-A4B-it-UD-IQ3_XXS.gguf
+
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.3
+

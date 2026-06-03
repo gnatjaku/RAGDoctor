@@ -64,6 +64,16 @@ services:
       MAX_CONTEXT_CHUNKS: ${MAX_CONTEXT_CHUNKS:-5}
       CHUNK_SIZE: ${CHUNK_SIZE:-800}
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-120}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      LLM_BACKEND: ${LLM_BACKEND:-ollama}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-doctor}
+      # OLLAMA_BASE_URL wskazuje na hosta – używamy host-gateway zamiast
+      # hardcodowanego 172.18.0.1, żeby uniknąć konfliktów po zmianie puli Docker
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host-gateway:11434}
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-ollama}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+    extra_hosts:
+      - "host-gateway:host-gateway"
 
   # ── Mongo Express (webowe GUI) ──────────────────────────────────────────
   mongo-express:
@@ -83,3 +93,12 @@ services:
 
 volumes:
   mongo-data: {}
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.200.1.0/24
+          gateway: 10.200.1.1
+

@@ -1,4 +1,7 @@
+import logging
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 
 def chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
@@ -13,15 +16,26 @@ def chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
         chunk 1: "Ala ma kota i psa"       (≤20 znaków)
         chunk 2: "i psa oraz rybkę"        (zaczyna od ostatnich ~5 znaków chunk 1)
     """
+    logger.debug(
+        "chunk_text wywołany: chunk_size=%d, chunk_overlap=%d, długość tekstu=%d znaków",
+        chunk_size, chunk_overlap, len(text),
+    )
+
     # Normalizacja białych znaków
     text = " ".join(text.split())
     if not text:
+        logger.warning("Przekazano pusty tekst – zwracam pustą listę chunków.")
         return []
 
     if chunk_overlap >= chunk_size:
+        logger.error(
+            "chunk_overlap (%d) musi być mniejszy niż chunk_size (%d)",
+            chunk_overlap, chunk_size,
+        )
         raise ValueError("chunk_overlap must be smaller than chunk_size")
 
     words = text.split(" ")
+    logger.debug("Liczba słów po normalizacji: %d", len(words))
     chunks: list[str] = []
     start_word = 0
 
@@ -39,6 +53,7 @@ def chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
 
         chunk = " ".join(words[start_word:end_word])
         chunks.append(chunk)
+        logger.debug("Chunk #%d (znaki=%d): %r", len(chunks), len(chunk), chunk)
 
         if end_word >= len(words):
             break
@@ -58,5 +73,6 @@ def chunk_text(text: str, chunk_size: int, chunk_overlap: int) -> List[str]:
 
         start_word = next_start
 
-
+    logger.info("Podzielono tekst na %d chunków (chunk_size=%d, chunk_overlap=%d).", len(chunks), chunk_size, chunk_overlap)
     return chunks
+

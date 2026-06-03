@@ -7,3 +7,7 @@ pydantic-settings==2.8.1
 python-dotenv==1.0.1
 tenacity==9.0.0
 tiktoken==0.9.0
+numpy
+reportlab==4.2.2
+# PyTorch – nightly cu128 wymagane dla RTX 5070 (Blackwell sm_120)
+# pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128

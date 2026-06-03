@@ -1,7 +1,22 @@
+# Python Virtual Environments
+.venv/
+venv/
+*.pyc
+__pycache__/
+*.pyo
+
+# Secrets and Local Configuration
 .env
 .env.local
-.venv/
-__pycache__/
-*.pyc
-/.idea/
+.env.example  # Only ignore if it contains sensitive placeholder keys
+
+# Operating System and IDE files
 .DS_Store
+.idea/
+
+# JavaScript Dependencies (from webgui)
+webgui/node_modules/
+webgui/npm-debug.log
+
+# Build/Compiled Files
+# Add directories here if you generate compiled assets (e.g., build/, dist/)

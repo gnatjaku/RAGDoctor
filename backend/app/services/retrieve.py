@@ -3,7 +3,6 @@ import re
 import unicodedata
 
 import torch
-import torch.nn.functional as F
 
 from app.db import collection
 from app.config import settings
@@ -11,9 +10,7 @@ from app.services.embeddings import embed_texts
 
 logger = logging.getLogger(__name__)
 
-# Urządzenie obliczeniowe — GPU jeśli dostępne, w przeciwnym razie CPU
-_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-logger.info("retrieve: urządzenie do obliczeń similarity: %s", _DEVICE)
+logger.info("retrieve: backend do obliczeń similarity: torch")
 
 # Polskie stop-słowa – nie wnoszą wartości do keyword boost
 _STOP_WORDS = {
@@ -159,6 +156,54 @@ def _rerank_components(question: str, doc: dict) -> dict[str, float]:
     }
 
 
+def _resolve_similarity_device() -> torch.device:
+    configured = settings.rag_similarity_device.lower().strip()
+    if configured == "cpu":
+        return torch.device("cpu")
+    if configured == "cuda":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        logger.warning("retrieve: RAG_SIMILARITY_DEVICE=cuda, ale CUDA nie jest dostępna; fallback na CPU")
+        return torch.device("cpu")
+    if configured != "auto":
+        logger.warning("retrieve: nieznany RAG_SIMILARITY_DEVICE=%s; używam auto", settings.rag_similarity_device)
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _is_cuda_oom(exc: RuntimeError) -> bool:
+    message = str(exc).lower()
+    return "out of memory" in message or "cudaerrormemoryallocation" in message
+
+
+def _cosine_similarity_torch(
+    query_vector: list[float],
+    embeddings: list[list[float]],
+    device: torch.device,
+) -> list[float]:
+    with torch.no_grad():
+        q = torch.tensor(query_vector, dtype=torch.float32, device=device)
+        e = torch.tensor(embeddings, dtype=torch.float32, device=device)
+        numerator = e @ q
+        denominator = torch.linalg.vector_norm(e, dim=1) * torch.linalg.vector_norm(q)
+        return torch.where(
+            denominator != 0,
+            numerator / denominator,
+            torch.zeros_like(numerator),
+        ).cpu().tolist()
+
+
+def _batch_cosine_similarity(query_vector: list[float], embeddings: list[list[float]]) -> tuple[list[float], str]:
+    device = _resolve_similarity_device()
+    try:
+        return _cosine_similarity_torch(query_vector, embeddings, device), device.type
+    except RuntimeError as exc:
+        if device.type != "cuda" or not _is_cuda_oom(exc):
+            raise
+        logger.warning("retrieve: CUDA OOM podczas similarity; czyszczę cache i liczę similarity na CPU")
+        torch.cuda.empty_cache()
+        return _cosine_similarity_torch(query_vector, embeddings, torch.device("cpu")), "cpu-fallback"
+
+
 def retrieve_chunks(question: str, top_k: int | None = None) -> list[dict]:
     k = top_k or settings.rag_top_k
     # Pobierz więcej kandydatów niż k, żeby re-ranking miał z czego wybierać
@@ -175,17 +220,12 @@ def retrieve_chunks(question: str, top_k: int | None = None) -> list[dict]:
     if not docs:
         return []
 
-    # --- batch GPU cosine similarity ---
+    # --- batch cosine similarity ---
     embeddings = [doc.pop("embedding") for doc in docs]
 
-    # Tensory na GPU (lub CPU jeśli brak karty)
-    q_t = torch.tensor(query_vector, dtype=torch.float32, device=_DEVICE).unsqueeze(0)  # (1, dim)
-    e_t = torch.tensor(embeddings, dtype=torch.float32, device=_DEVICE)                 # (N, dim)
+    vec_scores, similarity_device = _batch_cosine_similarity(query_vector, embeddings)
 
-    # Wszystkie podobieństwa jedną operacją macierzową
-    vec_scores: list[float] = F.cosine_similarity(q_t, e_t, dim=1).tolist()             # (N,)
-
-    logger.debug("retrieve: batch similarity na %s, N=%d", _DEVICE, len(docs))
+    logger.debug("retrieve: batch similarity in torch/%s, N=%d", similarity_device, len(docs))
 
     scored = []
     for doc, vec_score in zip(docs, vec_scores):

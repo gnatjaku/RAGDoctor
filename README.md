@@ -11,9 +11,10 @@ README jest skierowany do prowadzącego zajęcia lub komisji oceniającej projek
 ## Najważniejsze założenia
 
 - Odpowiedzi są generowane na podstawie zaindeksowanych dokumentów, a nie swobodnej wiedzy modelu.
-- Domyślny tryb AI korzysta lokalnie z Ollamy: model czatu `doctor` oraz embeddingi `nomic-embed-text`.
+- Domyślny tryb AI korzysta lokalnie z LM Studio: model czatu `Gemma 4 12B` oraz embeddingi `bge-m3`.
 - MongoDB przechowuje chunki dokumentów, embeddingi i metadane źródeł.
 - Retrieval łączy cosine similarity z hybrydowym re-rankingiem leksykalnym.
+- Do promptu trafiają tylko chunki po odcięciu słabego kontekstu odpowiedzi.
 - API udostępnia ingest dokumentów, zadawanie pytań i eksport odpowiedzi do PDF.
 - Web GUI jest prostym demonstratorem do zadawania pytań i podglądu użytych chunków.
 
@@ -41,13 +42,16 @@ Embedding pytania
 Hybrid retrieval + re-ranking
         |
         v
-LLM: Ollama albo OpenAI
+Odcięcie słabych chunków kontekstu
+        |
+        v
+LLM: Ollama, LM Studio albo OpenAI
         |
         v
 Odpowiedź + cytowane chunki
 ```
 
-Najpierw dokument jest dzielony na mniejsze fragmenty, czyli chunki. Każdy chunk otrzymuje embedding i jest zapisywany w MongoDB razem z metadanymi źródła. Gdy użytkownik zada pytanie, system tworzy embedding pytania, wyszukuje podobne chunki, poprawia ranking dodatkowymi regułami leksykalnymi, a następnie przekazuje wybrane fragmenty do LLM jako kontekst odpowiedzi.
+Najpierw dokument jest dzielony na mniejsze fragmenty, czyli chunki. Każdy chunk otrzymuje embedding i jest zapisywany w MongoDB razem z metadanymi źródła. Gdy użytkownik zada pytanie, system tworzy embedding pytania, wyszukuje podobne chunki, poprawia ranking dodatkowymi regułami leksykalnymi, odcina słabe fragmenty kontekstu, a następnie przekazuje wybrane fragmenty do LLM jako kontekst odpowiedzi.
 
 ## Architektura
 
@@ -61,14 +65,14 @@ Node.js + Express proxy
 FastAPI
   |     |      |
   |     |      +--> PDF export
-  |     +---------> Ollama / OpenAI
+  |     +---------> Ollama / LM Studio / OpenAI
   +---------------> MongoDB
 ```
 
 Najważniejsze katalogi:
 
 ```text
-app/
+backend/app/
   main.py              # FastAPI i endpointy
   services/
     chunking.py        # dzielenie dokumentów na chunki
@@ -93,6 +97,7 @@ webgui/
 - **PyMongo**: komunikacja z MongoDB.
 - **PyTorch**: lokalne liczenie cosine similarity na CPU albo GPU.
 - **Ollama**: lokalny backend AI dla LLM i embeddingów.
+- **LM Studio**: alternatywny lokalny backend LLM przez API kompatybilne z OpenAI.
 - **OpenAI API**: alternatywny backend dla modelu czatu i embeddingów.
 - **Node.js + Express**: prosty Web GUI i proxy do FastAPI.
 - **ReportLab**: generowanie PDF z odpowiedzią.
@@ -100,26 +105,49 @@ webgui/
 
 ## Lokalny backend AI
 
-Domyślnie projekt korzysta z lokalnej Ollamy. Zapytania do LLM i embeddingów nie muszą opuszczać lokalnego środowiska, o ile MongoDB, API i Ollama działają lokalnie.
+Pierwotnie projekt korzystał z lokalnego modelu  Ollamy. Zapytania do LLM i embeddingów nie opuszczały lokalnego środowiska, o ile MongoDB, API i Ollama działały lokalnie.
 
-Model czatu `doctor` jest lokalną konfiguracją Ollamy opartą o `gemma3:12b`. Może zostać utworzony z pliku `models/Modelfile`. Nie jest to osobny model medyczny trenowany od podstaw. Prompt systemowy wymusza odpowiadanie na podstawie dostarczonego kontekstu, unikanie zmyślania oraz zachęcanie do konsultacji medycznej w razie wątpliwości.
+Model czatu `doctor` był lokalną konfiguracją Ollamy opartą o `gemma3:12b`. Zostać utworzony z pliku `models/Modelfile`. Nie jest to osobny model medyczny trenowany od podstaw. Prompt systemowy wymusza odpowiadanie na podstawie dostarczonego kontekstu, unikanie zmyślania oraz zachęcanie do konsultacji medycznej w razie wątpliwości.
+
+Obecnie odpowiedzi są generowane przez LM Studio, ustawiając `LLM_BACKEND=lmstudio`. W tej konfiguracji backend korzysta z lokalnego serwera LM Studio zgodnego z API OpenAI, domyślnie pod adresem `http://localhost:1234/v1`, oraz modelu `google/gemma-4-12B`. Nazwa modelu musi odpowiadać nazwie modelu załadowanego lokalnie w LM Studio.
+
+Gemma 4 12B jest w projekcie traktowana jako aktualna generacja modelu Gemma od Google dla lokalnego generowania odpowiedzi. Praktyczna konfiguracja zakłada okno kontekstu około `30K` tokenów, ponieważ taki limit dobrze mieści się w pamięci dostępnej karty graficznej. To jest decyzja uruchomieniowa dobrana do sprzętu, a nie ograniczenie narzucone przez kod aplikacji.
+
+Domyślnym modelem embeddingów jest `bge-m3` uruchamiany przez Ollamę. Został wybrany jako bieżący model lokalny dla wielojęzycznych tekstów medycznych. W Ollamie zwraca embeddingi o wymiarze `1024`, dlatego `EMBEDDING_DIMENSIONS` w konfiguracji indeksów powinno być ustawione na `1024`.
 
 Przygotowanie modeli:
 
 ```bash
 ollama pull gemma3:12b
-ollama pull nomic-embed-text
+ollama pull bge-m3
 ollama create doctor -f models/Modelfile
 ollama serve
 ```
 
-Po zmianie modelu embeddingów trzeba ponownie zaindeksować dokumenty, ponieważ embedding pytania i embeddingi chunków muszą pochodzić z tego samego modelu.
+Szybki test embeddingów w Ollamie:
+
+```bash
+curl -sS http://localhost:11434/api/embed \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"bge-m3","input":"Pacjent pyta o objawy grypy i sposoby leczenia."}'
+```
+
+Po zmianie modelu embeddingów trzeba ponownie zaindeksować dokumenty, ponieważ embedding pytania i embeddingi chunków muszą pochodzić z tego samego modelu i mieć ten sam wymiar.
+
+Przykład ustawień dla LM Studio w `.env`:
+
+```env
+LLM_BACKEND=lmstudio
+LM_STUDIO_BASE_URL=http://localhost:1234/v1
+LM_STUDIO_CHAT_MODEL=google/gemma-4-12B
+LM_STUDIO_MAX_TOKENS=1024
+```
 
 ## Retrieval i re-ranking
 
-Projekt pokazuje praktyczny problem RAG: samo podobieństwo wektorowe nie zawsze wystarcza, szczególnie dla polskich tekstów medycznych i lokalnych modeli embeddingów. W udokumentowanym przypadku `nomic-embed-text` zwracał bardzo zbliżone wyniki dla chunków o grypie i HIV, bo teksty miały podobne słowa medyczne.
+Projekt pokazuje praktyczny problem RAG: samo podobieństwo wektorowe nie zawsze wystarcza, szczególnie dla polskich tekstów medycznych i lokalnych modeli embeddingów. Wcześniej używany `nomic-embed-text` zwracał bardzo zbliżone wyniki dla chunków o grypie i HIV, bo teksty miały podobne słowa medyczne. To był jeden z powodów przejścia na `bge-m3` oraz dodania hybrydowego re-rankingu.
 
-Dlatego `app/services/retrieve.py` łączy kilka sygnałów:
+Dlatego `backend/app/services/retrieve.py` łączy kilka sygnałów:
 
 - cosine similarity embeddingów,
 - dopasowanie słów kluczowych z pytania,
@@ -128,6 +156,31 @@ Dlatego `app/services/retrieve.py` łączy kilka sygnałów:
 - premie za zgodność tematu pytania i intencji.
 
 Taki hybrydowy retrieval poprawia trafność wyboru chunków, gdy embeddingi są zbyt mało rozróżniające.
+
+### Cosine similarity, PyTorch i fallback po OOM
+
+Podobieństwo kosinusowe między embeddingiem pytania i embeddingami chunków jest liczone batchowo w PyTorch. Domyślne ustawienie `RAG_SIMILARITY_DEVICE=auto` wybiera GPU, jeśli CUDA jest dostępna, albo CPU, jeśli CUDA nie jest dostępna.
+
+W praktyce lokalny model LLM uruchomiony w LM Studio może zająć prawie całą pamięć karty graficznej, szczególnie przy Gemma 4 12B i praktycznym oknie kontekstu około `30K` tokenów. Wtedy próba przeniesienia tensorów embeddingów na GPU do obliczenia cosine similarity może zakończyć się błędem CUDA OOM.
+
+Strategia aplikacji jest defensywna:
+
+- najpierw próbuje liczyć similarity w PyTorch na wybranym urządzeniu,
+- jeśli przy `cuda` wystąpi OOM, czyści cache CUDA przez `torch.cuda.empty_cache()`,
+- następnie powtarza obliczenie similarity na CPU i oznacza tryb jako `cpu-fallback`,
+- wynik retrieval pozostaje taki sam semantycznie, ale obliczenie może być wolniejsze niż na GPU.
+
+Dzięki temu LM Studio może używać VRAM na model generujący odpowiedź, a RAG nadal działa nawet wtedy, gdy GPU nie ma już wolnej pamięci na batchowe liczenie similarity. Jeśli LM Studio stale zajmuje całą kartę, można od razu ustawić `RAG_SIMILARITY_DEVICE=cpu`, żeby pominąć próbę użycia GPU i uniknąć ostrzeżeń OOM w logach.
+
+### Odcięcie kontekstu odpowiedzi
+
+Retrieval nadal zwraca najlepsze chunki według rankingu hybrydowego, ale nie każdy wynik musi trafić do promptu. Przed generowaniem odpowiedzi `/ask` filtruje chunki używane jako kontekst:
+
+- najlepszy chunk zostaje zachowany domyślnie zawsze,
+- kolejne chunki muszą mieć `score >= RAG_MIN_CONTEXT_SCORE`, domyślnie `0.2`,
+- lista `citations` zawiera tylko chunki faktycznie przekazane do modelu.
+
+To odcięcie ogranicza szum w kontekście i zmniejsza ryzyko, że model oprze odpowiedź na przypadkowym, słabo dopasowanym fragmencie. Nie jest to zamiennik retrievalu ani re-rankingu, tylko ostatni filtr bezpieczeństwa przed budową promptu.
 
 ## MongoDB jako magazyn chunków i embeddingów
 
@@ -205,17 +258,19 @@ cp .env.example .env
 
 ```bash
 ollama pull gemma3:12b
-ollama pull nomic-embed-text
+ollama pull bge-m3
 ollama create doctor -f models/Modelfile
 ollama serve
 ```
 
+   Jeśli używasz LM Studio zamiast Ollamy do generowania odpowiedzi, uruchom w LM Studio lokalny serwer OpenAI-compatible, załaduj model `google/gemma-4-12B` i ustaw w `.env` `LLM_BACKEND=lmstudio`. Embeddingi mogą nadal pochodzić z Ollamy przez `bge-m3`.
+
 4. Uruchom MongoDB, indeksy i API:
 
 ```bash
-docker compose -f docker-compose-rag.yml up -d mongodb
-docker compose -f docker-compose-rag.yml run --rm init-indexes
-docker compose -f docker-compose-rag.yml up -d rag-api
+docker compose up -d mongodb
+docker compose run --rm init-indexes
+docker compose up -d rag-api-pytorch
 ```
 
 5. Sprawdź status API:
@@ -264,6 +319,7 @@ Szczegóły jednego z takich problemów opisuje `data/readme.md`.
 - Jak użyć lokalnych modeli przez Ollamę.
 - Jakie ograniczenia mogą mieć lokalne embeddingi dla języka polskiego.
 - Dlaczego retrieval często wymaga re-rankingu, a nie tylko similarity embeddingów.
+- Dlaczego warto odcinać słabe chunki przed przekazaniem kontekstu do LLM.
 - Jak przechowywać chunki, embeddingi i metadane w MongoDB.
 - Jak udostępnić prototyp AI przez API i prosty interfejs webowy.
 
@@ -275,7 +331,7 @@ Lokalny tryb Ollama ogranicza potrzebę wysyłania zapytań do zewnętrznego API
 
 ## Możliwe kierunki rozwoju
 
-- Użycie lepszego wielojęzycznego modelu embeddingów.
+- Porównanie `bge-m3` z innymi wielojęzycznymi modelami embeddingów.
 - Porównanie Ollama vs OpenAI na tych samych pytaniach i dokumentach.
 - Pełne użycie Atlas Vector Search albo innego silnika vector search.
 - Automatyczne testy jakości retrieval dla zestawu pytań kontrolnych.
@@ -294,4 +350,4 @@ Akcje agentowe powinny być oddzielone od samego mechanizmu RAG: RAG odpowiada n
 
 ## Informacja o sposobie tworzenia projektu
 
-Aplikacja powstała jako przykład **Vibe Codingu**, czyli współpracy z narzędziami AI przy szybkim tworzeniu i iterowaniu kodu. Sam README został przygotowany przy użyciu skilla Matta Pococka, który reprezentuje bardziej kontrolowane podejście do pracy z AI: najpierw doprecyzowanie założeń, terminologii i decyzji projektowych, a dopiero potem generowanie dokumentacji.
+Aplikacja powstała jako przykład **Vibe Codingu**, czyli współpracy z narzędziami AI przy szybkim tworzeniu i iterowaniu kodu. Sam README został przygotowany przy użyciu skilla grill-me-with-docs Matta Pococka, który reprezentuje bardziej kontrolowane podejście do pracy z AI: najpierw doprecyzowanie założeń, terminologii i decyzji projektowych, a dopiero potem generowanie dokumentacji.

@@ -1,0 +1,37 @@
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+
+  # -----------------------------------------------------------------------
+  # One-shot services: creates production indexes after MongoDB is ready.
+  # Run manually:  docker compose run --rm init-indexes
+  # -----------------------------------------------------------------------
+  init-indexes:
+    image: python:3.11-slim
+    container_name: init-indexes
+    depends_on:
+      - mongodb
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-ragdoctor}
+      MONGO_COLLECTION_NAME: ${MONGO_COLLECTION_NAME:-chunks}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+    command: >
+      sh -c "pip install pymongo python-dotenv --quiet &&
+             python -m db.indexes"
+    restart: "no"
+
+volumes:
+  mongo-data: {}

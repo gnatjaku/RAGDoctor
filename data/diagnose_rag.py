@@ -19,7 +19,7 @@ MONGO_URI = os.getenv("MONGODB_URI") or (
 DB_NAME = os.getenv("MONGODB_DB", "rag_db")
 COLLECTION_NAME = os.getenv("MONGODB_COLLECTION", "documents")
 OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-EMBED_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
+EMBED_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "bge-m3")
 QUERY = os.getenv("DIAGNOSE_RAG_QUERY", "wirusy wywołujące grypę sezonową")
 
 c = MongoClient(MONGO_URI)
@@ -67,7 +67,7 @@ else:
     print("BRAK pola 'embedding' w dokumentach! Chunki nie mają embeddingów.")
 
 print("\n" + "=" * 60)
-print("4. TEST OLLAMA nomic-embed-text")
+print(f"4. TEST OLLAMA {EMBED_MODEL}")
 print("=" * 60)
 try:
     r = requests.post(f'{OLLAMA_URL}/api/embed',

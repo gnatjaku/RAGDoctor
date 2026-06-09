@@ -1,4 +1,6 @@
 services:
+
+  # ── MongoDB ─────────────────────────────────────────────────────────────
   mongodb:
     image: mongo:6.0
     container_name: mongodb
@@ -10,28 +12,161 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  # -----------------------------------------------------------------------
-  # One-shot services: creates production indexes after MongoDB is ready.
-  # Run manually:  docker compose run --rm init-indexes
-  # -----------------------------------------------------------------------
+  # ── Init indexes (one-shot) ─────────────────────────────────────────────
   init-indexes:
     image: python:3.11-slim
     container_name: init-indexes
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     working_dir: /app
     volumes:
       - .:/app
     environment:
       MONGO_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017
-      MONGO_DB_NAME: ${MONGO_DB_NAME:-ragdoctor}
-      MONGO_COLLECTION_NAME: ${MONGO_COLLECTION_NAME:-chunks}
-      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      MONGO_DB_NAME: ${MONGODB_DB:-rag_db}
+      MONGO_COLLECTION_NAME: ${MONGODB_COLLECTION:-documents}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
     command: >
       sh -c "pip install pymongo python-dotenv --quiet &&
              python -m db.indexes"
     restart: "no"
 
+  # ── RAG API ─────────────────────────────────────────────────────────────
+  rag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ragdoctor-api:latest
+    container_name: rag-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?retryWrites=true&w=majority
+      MONGODB_DB: ${MONGODB_DB:-rag_db}
+      MONGODB_COLLECTION: ${MONGODB_COLLECTION:-documents}
+      MONGODB_VECTOR_INDEX: ${MONGODB_VECTOR_INDEX:-vector_index}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
+      RAG_SIMILARITY_DEVICE: ${RAG_SIMILARITY_DEVICE:-auto}
+      RAG_MIN_CONTEXT_SCORE: ${RAG_MIN_CONTEXT_SCORE:-0.2}
+      RAG_ALWAYS_KEEP_TOP_CHUNK: ${RAG_ALWAYS_KEEP_TOP_CHUNK:-true}
+      MAX_CONTEXT_CHUNKS: ${MAX_CONTEXT_CHUNKS:-5}
+      MAX_CONTEXT_CHARS: ${MAX_CONTEXT_CHARS:-4000}
+      CHUNK_SIZE: ${CHUNK_SIZE:-800}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-120}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      LLM_BACKEND: ${LLM_BACKEND:-ollama}
+      LM_STUDIO_BASE_URL: ${DOCKER_LM_STUDIO_BASE_URL:-http://host-gateway:1234/v1}
+      LM_STUDIO_CHAT_MODEL: ${LM_STUDIO_CHAT_MODEL:-google/gemma-4-12B}
+      LM_STUDIO_MAX_TOKENS: ${LM_STUDIO_MAX_TOKENS:-1024}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-doctor}
+      # W kontenerze localhost wskazuje na kontener, nie na hosta z Ollamą.
+      # DOCKER_OLLAMA_BASE_URL pozwala nadpisać adres bez kolizji z lokalnym .env.
+      OLLAMA_BASE_URL: ${DOCKER_OLLAMA_BASE_URL:-http://host-gateway:11434}
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-ollama}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-bge-m3}
+    extra_hosts:
+      - "host-gateway:host-gateway"
+
+  rag-api-pytorch:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ragdoctor-api:latest
+    container_name: rag-api-pytorch
+    restart: unless-stopped
+    gpus: all
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/?retryWrites=true&w=majority
+      MONGODB_DB: ${MONGODB_DB:-rag_db}
+      MONGODB_COLLECTION: ${MONGODB_COLLECTION:-documents}
+      MONGODB_VECTOR_INDEX: ${MONGODB_VECTOR_INDEX:-vector_index}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
+      RAG_SIMILARITY_DEVICE: ${RAG_SIMILARITY_DEVICE:-auto}
+      RAG_MIN_CONTEXT_SCORE: ${RAG_MIN_CONTEXT_SCORE:-0.2}
+      RAG_ALWAYS_KEEP_TOP_CHUNK: ${RAG_ALWAYS_KEEP_TOP_CHUNK:-true}
+      MAX_CONTEXT_CHUNKS: ${MAX_CONTEXT_CHUNKS:-5}
+      MAX_CONTEXT_CHARS: ${MAX_CONTEXT_CHARS:-4000}
+      CHUNK_SIZE: ${CHUNK_SIZE:-800}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-120}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      LLM_BACKEND: ${LLM_BACKEND:-ollama}
+      LM_STUDIO_BASE_URL: ${DOCKER_LM_STUDIO_BASE_URL:-http://host-gateway:1234/v1}
+      LM_STUDIO_CHAT_MODEL: ${LM_STUDIO_CHAT_MODEL:-google/gemma-4-12B}
+      LM_STUDIO_MAX_TOKENS: ${LM_STUDIO_MAX_TOKENS:-1024}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-doctor}
+      # W kontenerze localhost wskazuje na kontener, nie na hosta z Ollamą.
+      # DOCKER_OLLAMA_BASE_URL pozwala nadpisać adres bez kolizji z lokalnym .env.
+      OLLAMA_BASE_URL: ${DOCKER_OLLAMA_BASE_URL:-http://host-gateway:11434}
+      EMBEDDING_BACKEND: ${EMBEDDING_BACKEND:-ollama}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-bge-m3}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    extra_hosts:
+      - "host-gateway:host-gateway"
+
+  # ── WebGUI ───────────────────────────────────────────────────────────────
+  webgui:
+    image: node:20-alpine
+    container_name: rag-webgui
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./webgui:/app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - rag-api-pytorch
+    environment:
+      WEBGUI_PORT: 3000
+      RAG_API_URL: http://rag-api-pytorch:8000
+    command: sh -c "npm ci && npm start"
+
+  # ── Mongo Express (webowe GUI) ──────────────────────────────────────────
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/
+      ME_CONFIG_BASICAUTH: "false"
+
 volumes:
   mongo-data: {}
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.200.1.0/24
+          gateway: 10.200.1.1

@@ -1,0 +1,17 @@
+[
+  {
+    "finish_reason": "length",
+    "index": 0,
+    "logprobs": null,
+    "message": {
+      "content": "",
+      "refusal": null,
+      "role": "assistant",
+      "annotations": null,
+      "audio": null,
+      "function_call": null,
+      "tool_calls": [],
+      "reasoning_content": "\nExperienced, kind, helpful general practitioner (doctor). Clear, friendly, empathetic tone. Patient should feel heard and calm.\nAnswer *only* based on the provided context. If not in context, say: \"Nie mam wystarczających informacji, aby odpowiedzieć na to pytanie.\" No external sources/medical inventions. Advise consulting a specialist if in doubt. Use simple language (no jargon). Polish diacritics included. No source citations in text.\n\"Kiedy mówimy o ciąży pozamacicznej i co to oznacza?\" (When do we talk about an ectopic pregnancy and what does it mean?)\n\n    *   Definition: \"Ciąża pozamaciczna\" occurs when a fertilized egg implants outside the uterus (\"zapłodnione jajeczko... poza jamą macicy\").\n    *   Specific locations mentioned: Fallopian tube (jajowód), ovary (jajnik), abdominal cavity/peritoneum (wnętrze ciała, między jelita - \"ciąża bruszna\"), and cervical area (ciaża szyjkowa).\n    *   Contextual details: It's a condition where the embryo doesn't nest properly in the uterine lining.\n\n    *   *Draft 1 (Mental Outline):* Ciąża pozamaciczna to sytuacja, gdy zapłodnione jajeczko rozwija się poza jamą macicy. Może to być w jajowodzie, jajniku albo w innych częściach ciała. To nie jest prawidłowe miejsce dla zarodka.\n\n    *   *Refining for Persona (Doctor):* \"Dzień dobry. Rozumiem, że ta sytuacja może budzić wiele pytań i obaw. Ciąża pozamaciczna to stan, w którym zapłodnione jajeczko rozwija się poza jamą macicy. Oznacza to, że zarodek nie zagnieździł się w odpowiednim miejscu – czyli wewnątrz macicy – lecz znalazł się np. w jajowodzie, jajniku lub w innych częściach ciała.\"\n\n    *   *Checking against constraints:*\n        *   Only from context? Yes.\n        *   No external info? Yes.\n        *   Simple language? Yes.\n        *   Polite/Empathetic? Yes.\n        *   Polish diacritics? Yes.\n        *   No citations? Yes.\n\n    \"Dzień dobry. Rozumiem, że ta sytuacja może budzić wiele pytań i obaw. O ciąży pozamacicznej mówimy wtedy, gdy zapłodnione jajeczko rozwija się poza jamą macicy. Oznacza to, że zarodek nie zagnieździł się w odpowiednim miejscu – czyli wewnątrz macicy – lecz znalazł się np. w jajowodzie, jajniku lub w innych częściach ciała.\"\n\n    *Wait, let me check if I should mention the specific types (jajowód, jajnik, etc.) as they are in the text.*\n    The prompt asks \"what does it mean\". The context says: \"Ciąża pozamaciczna to sytuacja"
+    }
+  }
+]

@@ -1,6 +1,7 @@
 import logging
 import logging.config
 
+import torch
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import Response
 
@@ -60,7 +61,84 @@ app = FastAPI(
 
 @app.get("/health", tags=["health"])
 def health() -> dict:
-    return {"status": "ok"}
+    cuda_available = torch.cuda.is_available()
+    return {
+        "status": "ok",
+        "torch": {
+            "cuda_available": cuda_available,
+            "device": torch.cuda.get_device_name(0) if cuda_available else "cpu",
+            "cuda_memory": _get_cuda_memory_status() if cuda_available else None,
+        },
+        "rag": {
+            "similarity_device": settings.rag_similarity_device,
+            "min_context_score": settings.rag_min_context_score,
+            "always_keep_top_chunk": settings.rag_always_keep_top_chunk,
+            "max_context_chunks": settings.max_context_chunks,
+            "max_context_chars": settings.max_context_chars,
+        },
+        "llm": {
+            "backend": settings.llm_backend,
+            "chat_model": _get_llm_chat_model(),
+            "base_url": _get_llm_base_url(),
+            "max_tokens": _get_llm_max_tokens(),
+        },
+    }
+
+
+def _get_cuda_memory_status() -> dict:
+    free_bytes, total_bytes = torch.cuda.mem_get_info()
+    return {
+        "free_mb": round(free_bytes / 1024 / 1024, 2),
+        "total_mb": round(total_bytes / 1024 / 1024, 2),
+        "allocated_mb": round(torch.cuda.memory_allocated() / 1024 / 1024, 2),
+        "reserved_mb": round(torch.cuda.memory_reserved() / 1024 / 1024, 2),
+    }
+
+
+def _get_llm_chat_model() -> str:
+    if settings.llm_backend == "ollama":
+        return settings.ollama_chat_model
+    if settings.llm_backend == "lmstudio":
+        return settings.lm_studio_chat_model
+    return settings.openai_chat_model
+
+
+def _get_llm_base_url() -> str:
+    if settings.llm_backend == "ollama":
+        return settings.ollama_base_url
+    if settings.llm_backend == "lmstudio":
+        return settings.lm_studio_base_url
+    return "https://api.openai.com/v1"
+
+
+def _get_llm_max_tokens() -> int | None:
+    if settings.llm_backend == "lmstudio":
+        return settings.lm_studio_max_tokens
+    return None
+
+
+def _filter_chunks_for_answer(chunks: list[dict]) -> list[dict]:
+    filtered: list[dict] = []
+    discarded: list[tuple[str, float]] = []
+
+    for index, chunk in enumerate(chunks):
+        score = float(chunk.get("score", 0.0))
+        keep_top_chunk = index == 0 and settings.rag_always_keep_top_chunk
+        if keep_top_chunk or score >= settings.rag_min_context_score:
+            filtered.append(chunk)
+        else:
+            discarded.append((str(chunk.get("chunk_id", "")), round(score, 6)))
+
+    if discarded:
+        logger.info(
+            "RAG context cutoff: kept=%d discarded=%d min_score=%.4f discarded=%s",
+            len(filtered),
+            len(discarded),
+            settings.rag_min_context_score,
+            discarded,
+        )
+
+    return filtered
 
 
 @app.post("/ingest", status_code=status.HTTP_201_CREATED, tags=["ingest"])
@@ -108,12 +186,19 @@ def ask(req: AskRequest) -> AskResponse:
             detail="No relevant chunks found. Try ingesting documents first.",
         )
 
+    answer_chunks = _filter_chunks_for_answer(chunks)
+    if not answer_chunks:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No chunks passed the relevance cutoff.",
+        )
+
     try:
-        answer = generate_grounded_answer(question=req.question, chunks=chunks)
+        answer = generate_grounded_answer(question=req.question, chunks=answer_chunks)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    citations = [RetrievedChunk(**c) for c in chunks]
+    citations = [RetrievedChunk(**c) for c in answer_chunks]
     return AskResponse(answer=answer, citations=citations)
 
 
@@ -140,4 +225,3 @@ def export_answer_pdf(req: ExportAnswerPdfRequest) -> Response:
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
     )
-
